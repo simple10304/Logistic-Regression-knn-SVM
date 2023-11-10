@@ -1,0 +1,190 @@
+```{r message=FALSE, warning=FALSE}
+#Q1
+library(png)
+library(dplyr)
+library(scales)
+library(reshape2)
+library(class)
+library(e1071)
+library(caret)
+library(ROCR)
+path <- "C:/Users/simpl/OneDrive/桌面/111_下學期/資料分析方法/HW02/ORL Faces/ORL Faces"
+
+data <- data.frame(matrix(nrow = 0, ncol = 2576),row.names = character())
+
+for (i in 1:40) {
+  for(j in 1:10){
+    file <- file.path(path, paste0( i,"_",j,".png"))
+    img <- readPNG(file)
+    vec <- as.vector(img)
+    data <- rbind(data, vec)
+  }
+}
+gender<-c(rep(0,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(0,10),rep(1,10),rep(0,10),
+          rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),
+          rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),
+          rep(1,10),rep(0,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10),rep(1,10))
+names(data) <- paste0("Pixel", 1:2576)
+
+data_with_label <- cbind(data, gender)
+y<-data_with_label[,2577]
+
+set.seed(123)
+
+trainIndex<-sample(1:nrow(data),0.7*nrow(data))
+train_data<-data_with_label[trainIndex,]
+test_data<-data_with_label[-trainIndex,]
+test_X<-test_data[,1:2576]
+test_Y<-test_data[,2577]
+
+logi_model<- glm(gender~.,family="binomial",data=train_data)
+logi_pred<- predict(logi_model,newdata = test_X)
+logi_pred<-ifelse(logi_pred>0.5,1,0)
+logi_ACC<-sum(logi_pred==test_Y)/length(test_Y)
+logi_confusionMatrix<-confusionMatrix(table(logi_pred,test_Y))
+prediction_obj<-prediction(logi_pred,test_Y)
+logi_performance_obj<-performance(prediction_obj,"tpr","fpr")
+logi_auc_obj<-performance(prediction_obj,"auc")
+logi_auc_value<-logi_auc_obj@y.values[[1]]
+
+
+knn_pred<-knn(train=train_data[,1:2576],test=test_X,cl=train_data[,2577],k=5)
+knn_confusionMatrix<-confusionMatrix(table(knn_pred,test_Y))
+knn_ACC<-sum(knn_pred==test_Y)/length(test_Y)
+knn_pred<-as.numeric(knn_pred)
+prediction_obj<-prediction(knn_pred,test_Y)
+knn_performance_obj<-performance(prediction_obj,"tpr","fpr")
+knn_auc_obj<-performance(prediction_obj,"auc")
+knn_auc_value<-knn_auc_obj@y.values[[1]]
+
+
+svm_model<-svm(gender~.,data=train_data)
+svm_pred<-predict(svm_model,newdata = test_X)
+svm_pred<-ifelse(svm_pred>0.5,1,0)
+svm_ACC<-sum(svm_pred==test_Y)/length(test_Y)
+svm_confusionMatrix<-confusionMatrix(table(svm_pred,test_Y))
+prediction_obj<-prediction(svm_pred,test_Y)
+svm_performance_obj<-performance(prediction_obj,"tpr","fpr")
+svm_auc_obj<-performance(prediction_obj,"auc")
+svm_auc_value<-svm_auc_obj@y.values[[1]]
+
+logi_confusionMatrix$byClass
+knn_confusionMatrix$byClass
+svm_confusionMatrix$byClass
+
+plot(logi_performance_obj,main="LR ROC Curve",colorize=TRUE)
+plot(knn_performance_obj,main="kNN ROC Curve",colorize=TRUE)
+plot(svm_performance_obj,main="SVM ROC Curve",colorize=TRUE)
+
+cat("LR AUC:", logi_auc_value, "\nkNN AUC:", knn_auc_value, "\nSVM AUC:", svm_auc_value)
+
+
+cat("LR accuracy:",round(logi_ACC,2),"\nkNN accuracy",round(knn_ACC,2),"\nSVM accuracy",round(svm_ACC,2))
+```
+We can evaluate the performance of a model based on different criteria, such as AUC and accuracy. From the results above, it can be seen that the accuracy of the kNN and SVM models is quite good. However, the Sensitivity shows that the performance of the LR and SVM models is not as good as that of the kNN model. Overall, I would choose to use either the kNN or SVM model, both of which have different classification method, to fit this ORL data set.
+
+Q2.
+```{r message=FALSE, warning=FALSE}
+library(glmnet)
+data<-as.matrix(data)
+gender<-as.matrix(gender)
+cv_model <- cv.glmnet(data,gender,alpha=1)
+best_lambda <- cv_model$lambda.min
+lasso_model <- glmnet(data,gender,alpha = 1,lambda = best_lambda)
+coef<-coef(lasso_model)
+
+chosen_pixels<-c()
+for (i in 1:nrow(coef)){
+  if (coef[i, ] != 0){
+    chosen_pixels<-rbind(chosen_pixels,i)
+  }
+}
+chosen_pixels_index<-chosen_pixels[,1]
+new_data<-as.data.frame(data[,chosen_pixels_index])
+new_data_with_label<-cbind(new_data, gender)
+set.seed(123)
+
+trainIndex<-sample(1:nrow(new_data),0.7*nrow(new_data))
+train_data<-new_data_with_label[trainIndex,]
+test_data<-new_data_with_label[-trainIndex,]
+ncol(test_data)
+test_X<-test_data[,1:ncol(test_data)-1]
+test_Y<-test_data[,ncol(test_data)]
+
+logi_model<- glm(gender~.,family="binomial",data=train_data)
+logi_pred<- predict(logi_model,newdata = test_X)
+logi_pred<-ifelse(logi_pred>0.5,1,0)
+logi_ACC<-sum(logi_pred==test_Y)/length(test_Y)
+
+knn_pred<-knn(train=train_data[,1:ncol(test_data)-1],test=test_X,cl=train_data[,ncol(test_data)],k=5)
+knn_ACC<-sum(knn_pred==test_Y)/length(test_Y)
+
+svm_model<-svm(gender~.,data=train_data)
+svm_pred<-predict(svm_model,newdata = test_X)
+svm_pred<-ifelse(svm_pred>0.5,1,0)
+svm_ACC<-sum(svm_pred==test_Y)/length(test_Y)
+
+cat("LR accuracy:",round(logi_ACC,2),"\nkNN accuracy",round(knn_ACC,2),"\nSVM accuracy",round(svm_ACC,2))
+```
+We first apply LASSO regression to select important features. Then, we use these selected features to build three different classification models - LR, kNN, and SVM. And we obtain similar accuracy results as the model that uses all features to build the models.
+
+Q3.
+
+```{r message=FALSE, warning=FALSE}
+library(pROC)
+setwd("C:/Users/simpl/OneDrive/桌面/111_下學期/資料分析方法/HW03")
+data <- read.table("auto-mpg.data.txt",header = FALSE,sep = "")
+str(data)
+colnames(data) <- c("mpg","cylinders","displacement","horsepower","weight","acceleration","model_year","origin","car name")
+
+data_withoutcarname<-subset(data,select=c(1:(ncol(data)-1)))
+data_withoutcarname$horsepower <- as.numeric(data_withoutcarname$horsepower)
+
+x<-na.omit(data_withoutcarname)
+
+library(nnet)
+
+trainIndex<-sample(1:nrow(x),0.7*nrow(x))
+train_data<-x[trainIndex,]
+test_data<-x[-trainIndex,]
+test_X<-test_data[,1:7]
+test_Y<-test_data[,8]
+
+logi_model<- multinom(origin ~ ., data = train_data)
+logi_pred<- predict(logi_model,newdata = test_X)
+logi_ACC<-sum(logi_pred==test_Y)/length(test_Y)
+logi_pred<-as.numeric(logi_pred)
+logi_roc<-multiclass.roc(test_Y,logi_pred,plot=FALSE)
+
+
+knn_pred<-knn(train=train_data[,1:7],test=test_X,cl=train_data[,8],k=5)
+knn_ACC<-sum(knn_pred==test_Y)/length(test_Y)
+knn_pred<-as.numeric(knn_pred)
+knn_roc<-multiclass.roc(test_Y,knn_pred,plot=FALSE)
+
+
+svm_model<-svm(origin~.,data=train_data,type="C-classification",decision.values = TRUE)
+svm_pred<-predict(svm_model,newdata = test_X)
+svm_ACC<-sum(svm_pred==test_Y)/length(test_Y)
+svm_pred<-as.numeric(svm_pred)
+svm_roc<-multiclass.roc(test_Y,svm_pred,plot=FALSE)
+
+
+plot(logi_roc$rocs[[1]],type="l",col="blue",main="Multiclass LR ROC Curve",xlab = "False Positive Rate", ylab = "True Positive Rate")
+lines(logi_roc$rocs[[2]],type="l",col="green")
+lines(logi_roc$rocs[[3]],type="l",col="red")
+
+plot(knn_roc$rocs[[1]],type="l",col="blue",main="kNN ROC Curve",xlab = "False Positive Rate", ylab = "True Positive Rate")
+lines(knn_roc$rocs[[2]],type="l",col="green")
+lines(knn_roc$rocs[[3]],type="l",col="red")
+
+plot(svm_roc$rocs[[1]],type="l",col="blue",main="SVM ROC Curve",xlab = "False Positive Rate", ylab = "True Positive Rate")
+lines(svm_roc$rocs[[2]],type="l",col="green")
+lines(svm_roc$rocs[[3]],type="l",col="red")
+
+cat("Multiclass LR AUC:", logi_roc$auc, "\nkNN AUC:", knn_roc$auc, "\nSVM AUC:", svm_roc$auc)
+
+cat("Multiclass LR accuracy:",round(logi_ACC,2),"\nkNN accuracy",round(knn_ACC,2),"\nSVM accuracy",round(svm_ACC,2))
+```
+From the results above, we can compare the accuracy and auc of three different methods. We obtained the similar results in multiclass LR, kNN and SVM. Therefore, we can use multiclass LR, kNN and SVM to model this AutoMPG dataset.
+
